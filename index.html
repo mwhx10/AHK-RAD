@@ -122,13 +122,23 @@ document.getElementById('btnApplyCSV').addEventListener('click', () => {
   if (!file) return;
   const rdr = new FileReader();
   rdr.onload = ev => {
-ev.target.result.split(/\r?\n/).forEach(line => {
+    let replaceAll = false;
+    let ignoreAll = false;
+    ev.target.result.split(/\r?\n/).forEach(line => {
       if (!line) return;
       const [key, ...rest] = line.split(',');
       const val = rest.join(',').trim();
       const k = key.trim();
       if (!k || !val) return;
-      if (shortcuts[k] && !confirm(`CSV: '${k}' exists. Replace?`)) return;
+      if (shortcuts[k]) {
+        if (ignoreAll) return;
+        if (!replaceAll) {
+          const choice = prompt(`CSV duplicate '${k}'.\n(r)replace, (i)ignore, (ra)replace all, (ia)ignore all`, 'i');
+          if (choice === null || choice.toLowerCase() === 'i') return;
+          if (choice.toLowerCase() === 'ia') { ignoreAll = true; return; }
+          if (choice.toLowerCase() === 'ra') replaceAll = true;
+        }
+      }
       shortcuts[k] = val;
     });
     refreshTable();
@@ -158,10 +168,15 @@ function deleteEntry(k) { if(confirm(`Delete '${k}'?`)){ delete shortcuts[k]; re
 
 function parseScript(text) {
   shortcuts = {};
-  // New format
+  // New object format
   if (/shortcuts\s*:=\s*Object\(\)/.test(text)) {
-    const re = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g; let m;
-    while(m=re.exec(text)) shortcuts[m[1]] = m[2];
+    const raw = /ObjRawSet\(\s*shortcuts\s*,\s*"([^"\\]+)"\s*,\s*"([^"\\]+)"\s*\)/g;
+    let m;
+    while(m = raw.exec(text)) shortcuts[m[1]] = m[2];
+    if (Object.keys(shortcuts).length)
+      return;
+    const re = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g;
+    while(m = re.exec(text)) shortcuts[m[1]] = m[2];
     return;
   }
   // Old literal format
@@ -182,7 +197,7 @@ function buildScript() {
 shortcuts := Object()
 `;
   Object.entries(shortcuts).forEach(([k,v])=>{
-    s+= `shortcuts["${k}"] := "${v}"
+    s+= `ObjRawSet(shortcuts, "${k}", "${v}")
 `;
   });
   s+= `
@@ -207,8 +222,11 @@ shortcuts := Object()
         SendInput, {Del}
         Sleep, 10  ; ensure deletion completes
         ; 3b) Send the full expansion plus space
+        if ( A_ThisHotkey = "Space" )
+            Hotkey, %A_ThisHotkey%, Off
         SendInput, % shortcuts[code] " "
         if ( A_ThisHotkey = "Space" ) {
+            Hotkey, %A_ThisHotkey%, On
             Clipboard := ClipSaved
             ClipSaved := ""
             return
@@ -216,8 +234,11 @@ shortcuts := Object()
     } else {
         ; 4) No match: move caret back
         SendInput, {Right}
-        if ( A_ThisHotkey = "Space" )
+        if ( A_ThisHotkey = "Space" ) {
+            Hotkey, %A_ThisHotkey%, Off
             SendInput, {Space}
+            Hotkey, %A_ThisHotkey%, On
+        }
     }
 
     ; 5) Restore original clipboard
