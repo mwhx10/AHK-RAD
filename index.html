@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AHK Shortcut Manager</title>
+  <style>
+    body { font-family: sans-serif; margin: 1rem; }
+    fieldset { margin-bottom: 1rem; padding: 0.5rem; }
+    legend { font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    th { background: #f4f4f4; }
+    input[type="text"], button { margin: 0.5rem 0; }
+    #shortcutTableContainer { max-height: 300px; overflow: auto; }
+    .inline { display: inline-block; margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>AHK Radiology Shortcuts Manager</h1>
+
+  <fieldset>
+    <legend>Load or Start Fresh</legend>
+    <label>Existing .ahk file: <input type="file" id="scriptFileInput" accept=".ahk"></label>
+    <button id="btnNew">New Script</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Trigger Keys</legend>
+    <div>
+      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="RShift"> Right Shift</label>
+      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="RCtrl"> Right Ctrl</label>
+      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="AppsKey"> AppsKey</label>
+      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="CapsLock"> CapsLock</label>
+      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="Space"> Spacebar</label>
+    </div>
+    <div>
+      <small>Custom scancodes (comma-separated):</small><br>
+      <input type="text" id="inputCustomScancode" placeholder="e.g. SC070, F13" style="width:200px;">
+    </div>
+    <button id="btnSaveTriggers">Save Triggers</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Bulk Import CSV</legend>
+    <label>CSV (shortcut,expanded): <input type="file" id="csvFileInput" accept=".csv"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Add or Update Shortcut</legend>
+    <input type="text" id="inputKey" placeholder="Shortcut">
+    <input type="text" id="inputValue" placeholder="Expansion">
+    <button id="btnAdd">Add / Update</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Search</legend>
+    <input type="text" id="inputSearch" placeholder="Type to search..."><button id="btnSearch">Search</button>
+    <button id="btnClearSearch">Clear</button>
+  </fieldset>
+
+  <div id="shortcutTableContainer">
+    <table id="shortcutTable">
+      <thead><tr><th>Shortcut</th><th>Expansion</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <fieldset>
+    <legend>Save Script</legend>
+    <button id="btnDownload">Download .ahk</button>
+  </fieldset>
+
+<script>
+let shortcuts = {};
+let triggers = [];
+const defaultTriggers = ['RShift','RCtrl','AppsKey','CapsLock','Space'];
+
+function initTriggers() {
+  document.querySelectorAll('.triggerCheckbox').forEach(cb => cb.checked = defaultTriggers.includes(cb.value));
+  document.getElementById('inputCustomScancode').value = '';
+  triggers = [...defaultTriggers];
+}
+
+function refreshTable(filter="") {
+  const tbody = document.querySelector('#shortcutTable tbody');
+  tbody.innerHTML = '';
+  Object.entries(shortcuts).forEach(([k,v]) => {
+    if (!filter || k.includes(filter) || v.includes(filter)) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${k}</td><td>${v}</td><td>` +
+        `<button onclick="editEntry('${k}')">Edit</button>` +
+        `<button onclick="deleteEntry('${k}')">Delete</button>` +
+        `</td>`;
+      tbody.appendChild(tr);
+    }
+  });
+}
+
+document.getElementById('scriptFileInput').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const rdr = new FileReader(); rdr.onload = ev => { parseScript(ev.target.result); refreshTable(); };
+  rdr.readAsText(file);
+});
+
+document.getElementById('btnNew').addEventListener('click', () => { shortcuts = {}; refreshTable(); });
+
+document.getElementById('btnSaveTriggers').addEventListener('click', () => {
+  triggers = [];
+  document.querySelectorAll('.triggerCheckbox:checked').forEach(cb => triggers.push(cb.value));
+  const custom = document.getElementById('inputCustomScancode').value.trim();
+  if (custom) triggers.push(...custom.split(/[,\s]+/).map(s=>s.trim()));
+  alert('Triggers: ' + triggers.join(', '));
+});
+
+document.getElementById('csvFileInput').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const rdr = new FileReader(); rdr.onload = ev => {
+    ev.target.result.split(/\r?\n/).forEach(line => {
+      if (!line) return;
+      const [key,...rest] = line.split(','); const val = rest.join(',').trim(); const k = key.trim();
+      if (!k||!val) return;
+      if (shortcuts[k] && !confirm(`CSV: '${k}' exists. Replace?`)) return;
+      shortcuts[k] = val;
+    }); refreshTable();
+  };
+  rdr.readAsText(file);
+});
+
+document.getElementById('btnAdd').addEventListener('click', () => {
+  const k = document.getElementById('inputKey').value.trim();
+  const v = document.getElementById('inputValue').value.trim();
+  if (!k||!v) return alert('Both fields required');
+  if (shortcuts[k] && !confirm(`'${k}' exists. Replace?`)) return;
+  shortcuts[k] = v;
+  document.getElementById('inputKey').value=''; document.getElementById('inputValue').value='';
+  refreshTable();
+});
+
+document.getElementById('btnSearch').addEventListener('click', ()=>refreshTable(document.getElementById('inputSearch').value.trim()));
+document.getElementById('btnClearSearch').addEventListener('click', ()=>{document.getElementById('inputSearch').value='';refreshTable();});
+
+function editEntry(k) { document.getElementById('inputKey').value=k; document.getElementById('inputValue').value=shortcuts[k]; }
+function deleteEntry(k) { if(confirm(`Delete '${k}'?`)){ delete shortcuts[k]; refreshTable(); }}
+
+function parseScript(text) {
+  shortcuts = {};
+  // New format
+  if (/shortcuts\s*:=\s*Object\(\)/.test(text)) {
+    const re = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g; let m;
+    while(m=re.exec(text)) shortcuts[m[1]] = m[2];
+    return;
+  }
+  // Old literal format
+  const mapM = /shortcuts\s*:=\s*{([\s\S]*?)}/.exec(text);
+  if (mapM) {
+    const re2 = /"([^"\\]+)"\s*:\s*"([^"\\]+)"/g; let m2;
+    while(m2=re2.exec(mapM[1])) shortcuts[m2[1]] = m2[2];
+  }
+}
+
+function buildScript() {
+  let s = `#NoEnv
+#SingleInstance Force
+#Requires AutoHotkey v1.1+
+
+; ─── Configuration ───
+; Define your abbreviations and their expansions:
+shortcuts := Object()
+`;
+  Object.entries(shortcuts).forEach(([k,v])=>{
+    s+= `shortcuts["${k}"] := "${v}"
+`;
+  });
+  s+= `
+; ─── Trigger Keys ───
+; List key names or scancodes:
+; e.g. RShift, RCtrl, AppsKey, CapsLock, Space, F13, SC070
+`;
+  triggers.forEach(t=>{ s+= `${t}::
+`; });
+  s+= `    ; 1) Backup & clear the clipboard
+    ClipSaved := ClipboardAll
+    Clipboard := ""
+
+    ; 2) Select the word to the left and copy it
+    SendInput, ^+{Left}
+    SendInput, ^c
+    ClipWait, 0.2  ; wait up to 200 ms for the clipboard
+
+    code := Trim(Clipboard)
+
+    if ( shortcuts.HasKey(code) ) {
+        ; 3a) Delete the code
+        SendInput, {Del}
+        Sleep, 10  ; ensure deletion completes
+        ; 3b) Send the full expansion
+        SendInput, % shortcuts[code]
+    } else {
+        ; 4) No match: move caret back
+        SendInput, {Right}
+    }
+
+    ; 5) Restore original clipboard
+    Clipboard := ClipSaved
+    ClipSaved := ""
+
+    ; 6) If Space was the trigger, send the actual space
+    if ( A_ThisHotkey = "Space" )
+        SendInput, {Space}
+return
+`;
+  return s;
+}
+
+document.getElementById('btnDownload').addEventListener('click', ()=>{
+  const blob=new Blob([buildScript()],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='radiology_shortcuts.ahk'; a.click(); URL.revokeObjectURL(a.href);
+});
+
+initTriggers(); refreshTable();
+</script>
+</body>
+</html>
