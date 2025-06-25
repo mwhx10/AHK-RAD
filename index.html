@@ -43,7 +43,10 @@
 
   <fieldset>
     <legend>Bulk Import CSV</legend>
-    <label>CSV (shortcut,expanded): <input type="file" id="csvFileInput" accept=".csv"></label>
+    <div>Format: two columns - shortcut, expansion</div>
+    <input type="file" id="csvFileInput" accept=".csv">
+    <button id="btnApplyCSV">Apply</button>
+    <button id="btnClearCSV">Clear</button>
   </fieldset>
 
   <fieldset>
@@ -69,6 +72,7 @@
   <fieldset>
     <legend>Save Script</legend>
     <button id="btnDownload">Download .ahk</button>
+    <div><small>Press Ctrl+Esc in AutoHotkey to exit.</small></div>
   </fieldset>
 
 <script>
@@ -113,18 +117,27 @@ document.getElementById('btnSaveTriggers').addEventListener('click', () => {
   alert('Triggers: ' + triggers.join(', '));
 });
 
-document.getElementById('csvFileInput').addEventListener('change', e => {
-  const file = e.target.files[0]; if (!file) return;
-  const rdr = new FileReader(); rdr.onload = ev => {
-    ev.target.result.split(/\r?\n/).forEach(line => {
+document.getElementById('btnApplyCSV').addEventListener('click', () => {
+  const file = document.getElementById('csvFileInput').files[0];
+  if (!file) return;
+  const rdr = new FileReader();
+  rdr.onload = ev => {
+ev.target.result.split(/\r?\n/).forEach(line => {
       if (!line) return;
-      const [key,...rest] = line.split(','); const val = rest.join(',').trim(); const k = key.trim();
-      if (!k||!val) return;
+      const [key, ...rest] = line.split(',');
+      const val = rest.join(',').trim();
+      const k = key.trim();
+      if (!k || !val) return;
       if (shortcuts[k] && !confirm(`CSV: '${k}' exists. Replace?`)) return;
       shortcuts[k] = val;
-    }); refreshTable();
+    });
+    refreshTable();
   };
   rdr.readAsText(file);
+});
+
+document.getElementById('btnClearCSV').addEventListener('click', () => {
+  document.getElementById('csvFileInput').value = '';
 });
 
 document.getElementById('btnAdd').addEventListener('click', () => {
@@ -187,30 +200,33 @@ shortcuts := Object()
     SendInput, ^+{Left}
     SendInput, ^c
     ClipWait, 0.2  ; wait up to 200 ms for the clipboard
-
-    code := Trim(Clipboard)
+    code := "" . Trim(Clipboard)
 
     if ( shortcuts.HasKey(code) ) {
         ; 3a) Delete the code
         SendInput, {Del}
         Sleep, 10  ; ensure deletion completes
-        ; 3b) Send the full expansion
-        SendInput, % shortcuts[code]
+        ; 3b) Send the full expansion plus space
+        SendInput, % shortcuts[code] " "
+        if ( A_ThisHotkey = "Space" ) {
+            Clipboard := ClipSaved
+            ClipSaved := ""
+            return
+        }
     } else {
         ; 4) No match: move caret back
         SendInput, {Right}
+        if ( A_ThisHotkey = "Space" )
+            SendInput, {Space}
     }
 
     ; 5) Restore original clipboard
     Clipboard := ClipSaved
     ClipSaved := ""
-
-    ; 6) If Space was the trigger, send the actual space
-    if ( A_ThisHotkey = "Space" )
-        SendInput, {Space}
 return
 `;
-  return s;
+s += `^Esc::ExitApp`;
+return s;
 }
 
 document.getElementById('btnDownload').addEventListener('click', ()=>{
