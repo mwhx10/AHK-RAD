@@ -10,8 +10,9 @@
     legend { font-weight: bold; }
     table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
     th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    td.expansion { white-space: pre-wrap; }
     th { background: #f4f4f4; }
-    input[type="text"], button { margin: 0.5rem 0; }
+    input[type="text"], textarea, button { margin: 0.5rem 0; }
     #shortcutTableContainer { max-height: 300px; overflow: auto; }
     .inline { display: inline-block; margin-right: 1rem; }
   </style>
@@ -25,21 +26,6 @@
     <button id="btnNew">New Script</button>
   </fieldset>
 
-  <fieldset>
-    <legend>Trigger Keys</legend>
-    <div>
-      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="RShift"> Right Shift</label>
-      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="RCtrl"> Right Ctrl</label>
-      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="AppsKey"> AppsKey</label>
-      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="CapsLock"> CapsLock</label>
-      <label class="inline"><input type="checkbox" class="triggerCheckbox" value="Space"> Spacebar</label>
-    </div>
-    <div>
-      <small>Custom scancodes (comma-separated):</small><br>
-      <input type="text" id="inputCustomScancode" placeholder="e.g. SC070, F13" style="width:200px;">
-    </div>
-    <button id="btnSaveTriggers">Save Triggers</button>
-  </fieldset>
 
   <fieldset>
     <legend>Bulk Import CSV</legend>
@@ -52,7 +38,7 @@
   <fieldset>
     <legend>Add or Update Shortcut</legend>
     <input type="text" id="inputKey" placeholder="Shortcut">
-    <input type="text" id="inputValue" placeholder="Expansion">
+    <textarea id="inputValue" placeholder="Expansion" rows="4" style="width:100%;"></textarea>
     <button id="btnAdd">Add / Update</button>
   </fieldset>
 
@@ -77,13 +63,26 @@
 
 <script>
 let shortcuts = {};
-let triggers = [];
-const defaultTriggers = ['RShift','RCtrl','AppsKey','CapsLock','Space'];
 
-function initTriggers() {
-  document.querySelectorAll('.triggerCheckbox').forEach(cb => cb.checked = defaultTriggers.includes(cb.value));
-  document.getElementById('inputCustomScancode').value = '';
-  triggers = [...defaultTriggers];
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      if (inQuotes && text[i + 1] === '"') { field += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      row.push(field); field = '';
+    } else if ((c === '\n' || c === '\r') && !inQuotes) {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); rows.push(row); row = []; field = '';
+    } else {
+      field += c;
+    }
+  }
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows;
 }
 
 function refreshTable(filter="") {
@@ -92,10 +91,17 @@ function refreshTable(filter="") {
   Object.entries(shortcuts).forEach(([k,v]) => {
     if (!filter || k.includes(filter) || v.includes(filter)) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${k}</td><td>${v}</td><td>` +
-        `<button onclick="editEntry('${k}')">Edit</button>` +
-        `<button onclick="deleteEntry('${k}')">Delete</button>` +
-        `</td>`;
+      const tdKey = document.createElement('td');
+      tdKey.textContent = k;
+      const tdVal = document.createElement('td');
+      tdVal.className = 'expansion';
+      tdVal.textContent = v;
+      const tdAct = document.createElement('td');
+      tdAct.innerHTML = `<button onclick="editEntry('${k}')">Edit</button>`+
+                        `<button onclick="deleteEntry('${k}')">Delete</button>`;
+      tr.appendChild(tdKey);
+      tr.appendChild(tdVal);
+      tr.appendChild(tdAct);
       tbody.appendChild(tr);
     }
   });
@@ -109,13 +115,6 @@ document.getElementById('scriptFileInput').addEventListener('change', e => {
 
 document.getElementById('btnNew').addEventListener('click', () => { shortcuts = {}; refreshTable(); });
 
-document.getElementById('btnSaveTriggers').addEventListener('click', () => {
-  triggers = [];
-  document.querySelectorAll('.triggerCheckbox:checked').forEach(cb => triggers.push(cb.value));
-  const custom = document.getElementById('inputCustomScancode').value.trim();
-  if (custom) triggers.push(...custom.split(/[,\s]+/).map(s=>s.trim()));
-  alert('Triggers: ' + triggers.join(', '));
-});
 
 document.getElementById('btnApplyCSV').addEventListener('click', () => {
   const file = document.getElementById('csvFileInput').files[0];
@@ -124,11 +123,10 @@ document.getElementById('btnApplyCSV').addEventListener('click', () => {
   rdr.onload = ev => {
     let replaceAll = false;
     let ignoreAll = false;
-    ev.target.result.split(/\r?\n/).forEach(line => {
-      if (!line) return;
-      const [key, ...rest] = line.split(',');
-      const val = rest.join(',').trim();
-      const k = key.trim();
+    parseCSV(ev.target.result).forEach(row => {
+      if (row.length < 2) return;
+      const k = row[0].trim();
+      const val = row.slice(1).join(',').trim();
       if (!k || !val) return;
       if (shortcuts[k]) {
         if (ignoreAll) return;
@@ -168,22 +166,25 @@ function deleteEntry(k) { if(confirm(`Delete '${k}'?`)){ delete shortcuts[k]; re
 
 function parseScript(text) {
   shortcuts = {};
-  // New object format
+  const re = /::([^:\r\n]+)::\s*\r?\n\(([^]*?)\)\s*/g;
+  let m;
+  while((m = re.exec(text)) !== null) {
+    shortcuts[m[1].trim()] = m[2].trim();
+  }
+  if (Object.keys(shortcuts).length) return;
+  // legacy formats
   if (/shortcuts\s*:=\s*Object\(\)/.test(text)) {
     const raw = /ObjRawSet\(\s*shortcuts\s*,\s*"([^"\\]+)"\s*,\s*"([^"\\]+)"\s*\)/g;
-    let m;
     while(m = raw.exec(text)) shortcuts[m[1]] = m[2];
-    if (Object.keys(shortcuts).length)
-      return;
-    const re = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g;
-    while(m = re.exec(text)) shortcuts[m[1]] = m[2];
+    if (Object.keys(shortcuts).length) return;
+    const re2 = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g;
+    while(m = re2.exec(text)) shortcuts[m[1]] = m[2];
     return;
   }
-  // Old literal format
   const mapM = /shortcuts\s*:=\s*{([\s\S]*?)}/.exec(text);
   if (mapM) {
-    const re2 = /"([^"\\]+)"\s*:\s*"([^"\\]+)"/g; let m2;
-    while(m2=re2.exec(mapM[1])) shortcuts[m2[1]] = m2[2];
+    const re3 = /"([^"\\]+)"\s*:\s*"([^"\\]+)"/g; let m2;
+    while(m2=re3.exec(mapM[1])) shortcuts[m2[1]] = m2[2];
   }
 }
 
@@ -192,62 +193,12 @@ function buildScript() {
 #SingleInstance Force
 #Requires AutoHotkey v1.1+
 
-; ─── Configuration ───
-; Define your abbreviations and their expansions:
-shortcuts := Object()
 `;
-  Object.entries(shortcuts).forEach(([k,v])=>{
-    s+= `ObjRawSet(shortcuts, "${k}", "${v}")
-`;
+  Object.entries(shortcuts).forEach(([k,v]) => {
+    s += `::${k}::\n(\n${v}\n)\n\n`;
   });
-  s+= `
-; ─── Trigger Keys ───
-; List key names or scancodes:
-; e.g. RShift, RCtrl, AppsKey, CapsLock, Space, F13, SC070
-`;
-  triggers.forEach(t=>{ s+= `${t}::
-`; });
-  s+= `    ; 1) Backup & clear the clipboard
-    ClipSaved := ClipboardAll
-    Clipboard := ""
-
-    ; 2) Select the word to the left and copy it
-    SendInput, ^+{Left}
-    SendInput, ^c
-    ClipWait, 0.2  ; wait up to 200 ms for the clipboard
-    code := "" . Trim(Clipboard)
-
-    if ( shortcuts.HasKey(code) ) {
-        ; 3a) Delete the code
-        SendInput, {Del}
-        Sleep, 10  ; ensure deletion completes
-        ; 3b) Send the full expansion plus space
-        if ( A_ThisHotkey = "Space" )
-            Hotkey, %A_ThisHotkey%, Off
-        SendInput, % shortcuts[code] " "
-        if ( A_ThisHotkey = "Space" ) {
-            Hotkey, %A_ThisHotkey%, On
-            Clipboard := ClipSaved
-            ClipSaved := ""
-            return
-        }
-    } else {
-        ; 4) No match: move caret back
-        SendInput, {Right}
-        if ( A_ThisHotkey = "Space" ) {
-            Hotkey, %A_ThisHotkey%, Off
-            SendInput, {Space}
-            Hotkey, %A_ThisHotkey%, On
-        }
-    }
-
-    ; 5) Restore original clipboard
-    Clipboard := ClipSaved
-    ClipSaved := ""
-return
-`;
-s += `^Esc::ExitApp`;
-return s;
+  s += '^Esc::ExitApp';
+  return s;
 }
 
 document.getElementById('btnDownload').addEventListener('click', ()=>{
@@ -256,7 +207,7 @@ document.getElementById('btnDownload').addEventListener('click', ()=>{
   a.download='radiology_shortcuts.ahk'; a.click(); URL.revokeObjectURL(a.href);
 });
 
-initTriggers(); refreshTable();
+refreshTable();
 </script>
 </body>
 </html>
