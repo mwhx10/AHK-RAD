@@ -1,22 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AHK Shortcut Manager</title>
   <style>
-    body { font-family: sans-serif; margin: 1rem; }
-    fieldset { margin-bottom: 1rem; padding: 0.5rem; }
-    legend { font-weight: bold; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
-    td.expansion { white-space: pre-wrap; }
-    th { background: #f4f4f4; }
-    input[type="text"], textarea, button { margin: 0.5rem 0; }
-    #shortcutTableContainer { max-height: 300px; overflow: auto; }
-    .inline { display: inline-block; margin-right: 1rem; }
+    body {
+      font-family: sans-serif;
+      margin: 1rem;
+    }
+
+    fieldset {
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+    }
+
+    legend {
+      font-weight: bold;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: left;
+    }
+
+    td.expansion {
+      white-space: pre-wrap;
+    }
+
+    th {
+      background: #f4f4f4;
+    }
+
+    input[type="text"],
+    textarea,
+    button {
+      margin: 0.5rem 0;
+    }
+
+    #shortcutTableContainer {
+      max-height: 300px;
+      overflow: auto;
+    }
+
+    .inline {
+      display: inline-block;
+      margin-right: 1rem;
+    }
   </style>
 </head>
+
 <body>
   <h1>AHK Radiology Shortcuts Manager</h1>
 
@@ -44,170 +86,190 @@
 
   <fieldset>
     <legend>Search</legend>
-    <input type="text" id="inputSearch" placeholder="Type to search..."><button id="btnSearch">Search</button>
-    <button id="btnClearSearch">Clear</button>
+    <legend>Filter</legend>
+    <div class="inline">
+      <label>Shortcut: <input type="text" id="filterShortcut" placeholder="Filter by shortcut"></label>
+    </div>
+    <div class="inline">
+      <label>Expansion: <input type="text" id="filterExpansion" placeholder="Filter by expansion"></label>
+    </div>
+    <button id="btnApplyFilter">Apply</button>
+    <button id="btnClearFilter">Clear</button>
   </fieldset>
 
   <div id="shortcutTableContainer">
     <table id="shortcutTable">
-      <thead><tr><th>Shortcut</th><th>Expansion</th><th>Actions</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Shortcut</th>
+          <th>Expansion</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
       <tbody></tbody>
     </table>
   </div>
-
+  <br>
   <fieldset>
     <legend>Save Script</legend>
     <button id="btnDownload">Download .ahk</button>
     <div><small>Press Ctrl+Esc in AutoHotkey to exit.</small></div>
   </fieldset>
 
-<script>
-let shortcuts = {};
+  <script>
+    let shortcuts = {};
 
-function parseCSV(text) {
-  const rows = [];
-  let row = [], field = '', inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"') {
-      if (inQuotes && text[i + 1] === '"') { field += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (c === ',' && !inQuotes) {
-      row.push(field); field = '';
-    } else if ((c === '\n' || c === '\r') && !inQuotes) {
-      if (c === '\r' && text[i + 1] === '\n') i++;
-      row.push(field); rows.push(row); row = []; field = '';
-    } else {
-      field += c;
-    }
-  }
-  if (field || row.length) { row.push(field); rows.push(row); }
-  return rows;
-}
-
-function refreshTable(filter="") {
-  const tbody = document.querySelector('#shortcutTable tbody');
-  tbody.innerHTML = '';
-  Object.entries(shortcuts).forEach(([k,v]) => {
-    if (!filter || k.includes(filter) || v.includes(filter)) {
-      const tr = document.createElement('tr');
-      const tdKey = document.createElement('td');
-      tdKey.textContent = k;
-      const tdVal = document.createElement('td');
-      tdVal.className = 'expansion';
-      tdVal.textContent = v;
-      const tdAct = document.createElement('td');
-      tdAct.innerHTML = `<button onclick="editEntry('${k}')">Edit</button>`+
-                        `<button onclick="deleteEntry('${k}')">Delete</button>`;
-      tr.appendChild(tdKey);
-      tr.appendChild(tdVal);
-      tr.appendChild(tdAct);
-      tbody.appendChild(tr);
-    }
-  });
-}
-
-document.getElementById('scriptFileInput').addEventListener('change', e => {
-  const file = e.target.files[0]; if (!file) return;
-  const rdr = new FileReader(); rdr.onload = ev => { parseScript(ev.target.result); refreshTable(); };
-  rdr.readAsText(file);
-});
-
-document.getElementById('btnNew').addEventListener('click', () => { shortcuts = {}; refreshTable(); });
-
-
-document.getElementById('btnApplyCSV').addEventListener('click', () => {
-  const file = document.getElementById('csvFileInput').files[0];
-  if (!file) return;
-  const rdr = new FileReader();
-  rdr.onload = ev => {
-    let replaceAll = false;
-    let ignoreAll = false;
-    parseCSV(ev.target.result).forEach(row => {
-      if (row.length < 2) return;
-      const k = row[0].trim();
-      const val = row.slice(1).join(',').trim();
-      if (!k || !val) return;
-      if (shortcuts[k]) {
-        if (ignoreAll) return;
-        if (!replaceAll) {
-          const choice = prompt(`CSV duplicate '${k}'.\n(r)replace, (i)ignore, (ra)replace all, (ia)ignore all`, 'i');
-          if (choice === null || choice.toLowerCase() === 'i') return;
-          if (choice.toLowerCase() === 'ia') { ignoreAll = true; return; }
-          if (choice.toLowerCase() === 'ra') replaceAll = true;
+    function parseCSV(text) {
+      const rows = [];
+      let row = [], field = '', inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          if (inQuotes && text[i + 1] === '"') { field += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (c === ',' && !inQuotes) {
+          row.push(field); field = '';
+        } else if ((c === '\n' || c === '\r') && !inQuotes) {
+          if (c === '\r' && text[i + 1] === '\n') i++;
+          row.push(field); rows.push(row); row = []; field = '';
+        } else {
+          field += c;
         }
       }
-      shortcuts[k] = val;
+      if (field || row.length) { row.push(field); rows.push(row); }
+      return rows;
+    }
+
+    function refreshTable(keyFilter = "", valFilter = "") {
+      const tbody = document.querySelector('#shortcutTable tbody');
+      tbody.innerHTML = '';
+      const kf = keyFilter.toLowerCase();
+      const vf = valFilter.toLowerCase();
+      Object.entries(shortcuts).forEach(([k, v]) => {
+        if ((!kf || k.toLowerCase().includes(kf)) && (!vf || v.toLowerCase().includes(vf))) {
+          const tr = document.createElement('tr');
+          const tdKey = document.createElement('td');
+          tdKey.textContent = k;
+          const tdVal = document.createElement('td');
+          tdVal.className = 'expansion';
+          tdVal.textContent = v;
+          const tdAct = document.createElement('td');
+          tdAct.innerHTML = `<button onclick="editEntry('${k}')">Edit</button>` +
+            `<button onclick="deleteEntry('${k}')">Delete</button>`;
+          tr.appendChild(tdKey);
+          tr.appendChild(tdVal);
+          tr.appendChild(tdAct);
+          tbody.appendChild(tr);
+        }
+      });
+    }
+
+    document.getElementById('scriptFileInput').addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const rdr = new FileReader(); rdr.onload = ev => { parseScript(ev.target.result); refreshTable(); };
+      rdr.readAsText(file);
     });
+
+    document.getElementById('btnNew').addEventListener('click', () => { shortcuts = {}; refreshTable(); });
+
+
+    document.getElementById('btnApplyCSV').addEventListener('click', () => {
+      const file = document.getElementById('csvFileInput').files[0];
+      if (!file) return;
+      const rdr = new FileReader();
+      rdr.onload = ev => {
+        let replaceAll = false;
+        let ignoreAll = false;
+        parseCSV(ev.target.result).forEach(row => {
+          if (row.length < 2) return;
+          const k = row[0].trim();
+          const val = row.slice(1).join(',').trim();
+          if (!k || !val) return;
+          if (shortcuts[k]) {
+            if (ignoreAll) return;
+            if (!replaceAll) {
+              const choice = prompt(`CSV duplicate '${k}'.\n(r)replace, (i)ignore, (ra)replace all, (ia)ignore all`, 'i');
+              if (choice === null || choice.toLowerCase() === 'i') return;
+              if (choice.toLowerCase() === 'ia') { ignoreAll = true; return; }
+              if (choice.toLowerCase() === 'ra') replaceAll = true;
+            }
+          }
+          shortcuts[k] = val;
+        });
+        refreshTable();
+      };
+      rdr.readAsText(file);
+    });
+
+    document.getElementById('btnClearCSV').addEventListener('click', () => {
+      document.getElementById('csvFileInput').value = '';
+    });
+
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      const k = document.getElementById('inputKey').value.trim();
+      const v = document.getElementById('inputValue').value.trim();
+      if (!k || !v) return alert('Both fields required');
+      if (shortcuts[k] && !confirm(`'${k}' exists. Replace?`)) return;
+      shortcuts[k] = v;
+      document.getElementById('inputKey').value = ''; document.getElementById('inputValue').value = '';
+      refreshTable();
+    });
+
+    document.getElementById('btnApplyFilter').addEventListener('click', () => {
+      const kf = document.getElementById('filterShortcut').value.trim();
+      const vf = document.getElementById('filterExpansion').value.trim();
+      refreshTable(kf, vf);
+    });
+    document.getElementById('btnClearFilter').addEventListener('click', () => {
+      document.getElementById('filterShortcut').value = '';
+      document.getElementById('filterExpansion').value = '';
+      refreshTable();
+    });
+
+    function editEntry(k) { document.getElementById('inputKey').value = k; document.getElementById('inputValue').value = shortcuts[k]; }
+    function deleteEntry(k) { if (confirm(`Delete '${k}'?`)) { delete shortcuts[k]; refreshTable(); } }
+
+    function parseScript(text) {
+      shortcuts = {};
+      const re = /::([^:\r\n]+)::\s*\r?\n\(([^]*?)\)\s*/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        shortcuts[m[1].trim()] = m[2].trim();
+      }
+      if (Object.keys(shortcuts).length) return;
+      // legacy formats
+      if (/shortcuts\s*:=\s*Object\(\)/.test(text)) {
+        const raw = /ObjRawSet\(\s*shortcuts\s*,\s*"([^"\\]+)"\s*,\s*"([^"\\]+)"\s*\)/g;
+        while (m = raw.exec(text)) shortcuts[m[1]] = m[2];
+        if (Object.keys(shortcuts).length) return;
+        const re2 = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g;
+        while (m = re2.exec(text)) shortcuts[m[1]] = m[2];
+        return;
+      }
+      const mapM = /shortcuts\s*:=\s*{([\s\S]*?)}/.exec(text);
+      if (mapM) {
+        const re3 = /"([^"\\]+)"\s*:\s*"([^"\\]+)"/g; let m2;
+        while (m2 = re3.exec(mapM[1])) shortcuts[m2[1]] = m2[2];
+      }
+    }
+
+    function buildScript() {
+      let s = ``;
+      Object.entries(shortcuts).forEach(([k, v]) => {
+        s += `::${k}::\n(\n${v}\n)\n\n`;
+      });
+      s += '^Esc::ExitApp';
+      return s;
+    }
+
+    document.getElementById('btnDownload').addEventListener('click', () => {
+      const blob = new Blob([buildScript()], { type: 'text/plain' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = 'radiology_shortcuts.ahk'; a.click(); URL.revokeObjectURL(a.href);
+    });
+
     refreshTable();
-  };
-  rdr.readAsText(file);
-});
-
-document.getElementById('btnClearCSV').addEventListener('click', () => {
-  document.getElementById('csvFileInput').value = '';
-});
-
-document.getElementById('btnAdd').addEventListener('click', () => {
-  const k = document.getElementById('inputKey').value.trim();
-  const v = document.getElementById('inputValue').value.trim();
-  if (!k||!v) return alert('Both fields required');
-  if (shortcuts[k] && !confirm(`'${k}' exists. Replace?`)) return;
-  shortcuts[k] = v;
-  document.getElementById('inputKey').value=''; document.getElementById('inputValue').value='';
-  refreshTable();
-});
-
-document.getElementById('btnSearch').addEventListener('click', ()=>refreshTable(document.getElementById('inputSearch').value.trim()));
-document.getElementById('btnClearSearch').addEventListener('click', ()=>{document.getElementById('inputSearch').value='';refreshTable();});
-
-function editEntry(k) { document.getElementById('inputKey').value=k; document.getElementById('inputValue').value=shortcuts[k]; }
-function deleteEntry(k) { if(confirm(`Delete '${k}'?`)){ delete shortcuts[k]; refreshTable(); }}
-
-function parseScript(text) {
-  shortcuts = {};
-  const re = /::([^:\r\n]+)::\s*\r?\n\(([^]*?)\)\s*/g;
-  let m;
-  while((m = re.exec(text)) !== null) {
-    shortcuts[m[1].trim()] = m[2].trim();
-  }
-  if (Object.keys(shortcuts).length) return;
-  // legacy formats
-  if (/shortcuts\s*:=\s*Object\(\)/.test(text)) {
-    const raw = /ObjRawSet\(\s*shortcuts\s*,\s*"([^"\\]+)"\s*,\s*"([^"\\]+)"\s*\)/g;
-    while(m = raw.exec(text)) shortcuts[m[1]] = m[2];
-    if (Object.keys(shortcuts).length) return;
-    const re2 = /shortcuts\["([^"\\]+)"\]\s*:=\s*"([^"\\]+)"/g;
-    while(m = re2.exec(text)) shortcuts[m[1]] = m[2];
-    return;
-  }
-  const mapM = /shortcuts\s*:=\s*{([\s\S]*?)}/.exec(text);
-  if (mapM) {
-    const re3 = /"([^"\\]+)"\s*:\s*"([^"\\]+)"/g; let m2;
-    while(m2=re3.exec(mapM[1])) shortcuts[m2[1]] = m2[2];
-  }
-}
-
-function buildScript() {
-  let s = `#NoEnv
-#SingleInstance Force
-#Requires AutoHotkey v1.1+
-
-`;
-  Object.entries(shortcuts).forEach(([k,v]) => {
-    s += `::${k}::\n(\n${v}\n)\n\n`;
-  });
-  s += '^Esc::ExitApp';
-  return s;
-}
-
-document.getElementById('btnDownload').addEventListener('click', ()=>{
-  const blob=new Blob([buildScript()],{type:'text/plain'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='radiology_shortcuts.ahk'; a.click(); URL.revokeObjectURL(a.href);
-});
-
-refreshTable();
-</script>
+  </script>
 </body>
+
 </html>
