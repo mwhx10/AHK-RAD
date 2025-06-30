@@ -19,13 +19,13 @@ The project consists of a single HTML file (`index.html`) containing JavaScript 
 No build step or server is required; everything runs client‑side.
 
 ## CSV Format
-The CSV import expects two columns:
+By default the CSV import assumes the first column contains the shortcut and the second contains the expansion:
 
 ```
 shortcut,expansion
 ```
 
-Each row is added to the list, with options to handle duplicates.
+If your file uses different columns you can specify which column numbers to use in the Bulk Import section. Columns are 1-based. You can also choose to ignore the first row if it contains headers. Each row is added to the list with options to handle duplicates.
 
 ## License
 This project is provided as-is without a specific license. Feel free to modify for your own use.
