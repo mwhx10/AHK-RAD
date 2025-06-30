@@ -71,8 +71,13 @@
 
   <fieldset>
     <legend>Bulk Import CSV</legend>
-    <div>Format: two columns - shortcut, expansion</div>
+       <div>Specify which columns contain the shortcut and expansion</div>
     <input type="file" id="csvFileInput" accept=".csv">
+    <div>
+      <label>Shortcut column: <input type="number" id="csvColShort" value="1" min="1" style="width:4em;"></label>
+      <label>Expansion column: <input type="number" id="csvColExpand" value="2" min="1" style="width:4em;"></label>
+      <label><input type="checkbox" id="csvIgnoreHeader"> Ignore first row</label>
+    </div>
     <button id="btnApplyCSV">Apply</button>
     <button id="btnClearCSV">Clear</button>
   </fieldset>
@@ -176,14 +181,22 @@
     document.getElementById('btnApplyCSV').addEventListener('click', () => {
       const file = document.getElementById('csvFileInput').files[0];
       if (!file) return;
+            const idxShort = parseInt(document.getElementById('csvColShort').value) - 1;
+      const idxExp = parseInt(document.getElementById('csvColExpand').value) - 1;
+      const ignoreHeader = document.getElementById('csvIgnoreHeader').checked;
+      if (isNaN(idxShort) || isNaN(idxExp) || idxShort < 0 || idxExp < 0) {
+        alert('Invalid column numbers');
+        return;
+      }
       const rdr = new FileReader();
       rdr.onload = ev => {
         let replaceAll = false;
         let ignoreAll = false;
-        parseCSV(ev.target.result).forEach(row => {
-          if (row.length < 2) return;
-          const k = row[0].trim();
-          const val = row.slice(1).join(',').trim();
+              parseCSV(ev.target.result).forEach((row, i) => {
+          if (ignoreHeader && i === 0) return;
+          if (row.length <= Math.max(idxShort, idxExp)) return;
+          const k = row[idxShort].trim();
+          const val = row[idxExp].trim();
           if (!k || !val) return;
           if (shortcuts[k]) {
             if (ignoreAll) return;
